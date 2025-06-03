@@ -166,104 +166,12 @@ void itoa(int val, char *buffer) {
   buffer[j] = '\0';
 }
 
-
-#define KEYBOARD_STATUS 0x64
-#define KEYBOARD_EA 0x60
-
-uint8_t last_scancode = 0;
-
-static void send_command(uint8_t command) {
-  while ((inb(KEYBOARD_STATUS) & 2));
-
-  outb(KEYBOARD_EA, command);
-}
-
-uint32_t get_scancode() {
- static unsigned e0_code = 0;
-  static unsigned e1_code = 0;
-  static uint16_t e1_prev = 0;
-  uint8_t scancode = 0;
-  if (inb(KEYBOARD_STATUS) & 1) {
-    // a scancode is available in the buffer
-    scancode = inb(KEYBOARD_EA);
-    if (e0_code == 1) {
-      // scancode is an e0 code
-      e0_code = 0;
-      return (0xe000 | scancode);
-    } else if (e1_code == 1) {
-      // scancode is first byte of e1 code
-      e1_prev = scancode;
-      e1_code = 2;
-    } else  if (e1_code == 2) {
-      // scancode is second byte of e1 code (first is in e1_prev)
-      e1_code = 0;
-      return (0xe10000 | e1_prev << 8 | scancode);
-    } else if (scancode == 0xe0) {
-      e0_code = 1;
-      scancode = 0;
-    } else if (scancode == 0xe1) {
-      e1_code = 1;
-      scancode = 0;
-    }
-  }
-  return scancode;
-}
-
-void initialize() {
-  while (inb(KEYBOARD_STATUS) & 1) {
-    inb(KEYBOARD_EA);
-  }
-
-  // activate keyboard
-  send_command(0xF4);
-  while (inb(KEYBOARD_STATUS) & 1) {
-    inb(KEYBOARD_EA); // read (and drop) what's left in the keyboard buffer
-  }
-
-  // self-test (should answer with 0xEE)
-  send_command(0xEE);
-}
-
-void loop() {
-  uint8_t scancode = 0;
-  while ((scancode = get_scancode()) == 0)  { // loop until we get a keypress
-    // delay();
-  }
-  last_scancode = scancode;
-}
-
-char kbd_US [128] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-  '\t', /* <-- Tab */
-  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, /* <-- control key */
-  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',  0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',   0,
-  '*',
-    0,  /* Alt */
-  ' ',  /* Space bar */
-    0,  /* Caps lock */
-    0,  /* 59 - F1 key ... > */
-    0,   0,   0,   0,   0,   0,   0,   0,
-    0,  /* < ... F10 */
-    0,  /* 69 - Num lock*/
-    0,  /* Scroll Lock */
-    0,  /* Home key */
-    0,  /* Up Arrow */
-    0,  /* Page Up */
-  '-',
-    0,  /* Left Arrow */
-    0,
-    0,  /* Right Arrow */
-  '+',
-    0,  /* 79 - End key*/
-    0,  /* Down Arrow */
-    0,  /* Page Down */
-    0,  /* Insert Key */
-    0,  /* Delete Key */
-    0,   0,   0,
-    0,  /* F11 Key */
-    0,  /* F12 Key */
-    0,  /* All other keys are undefined */
+const char us_keyboard[] = {
+  0,  27, '1','2','3','4','5','6','7','8','9','0','-','=', '\b',
+  '\t', 'q','w','e','r','t','y','u','i','o','p','[',']','\n',
+  0, 'a','s','d','f','g','h','j','k','l',';','\'','`',
+  0, '\\','z','x','c','v','b','n','m',',','.','/', 0,
+  '*', 0,  ' ',
 };
 
 void kernel_main() {
@@ -278,15 +186,16 @@ void kernel_main() {
     terminal_put_char(&terminal, '\n');
   }
 
-  terminal_put_string(&terminal, "That was a lot of lines.\n");
+  terminal_put_string(&terminal, "That was a lot of lines.\nIs that correct grammar?");
 
-  initialize();
   while (true) {
-    loop();
+    if (inb(0x64) & 1) {
+      uint8_t scancode = inb(0x60);
 
-    char c = kbd_US[last_scancode];
-    if (c != 0) {
-      terminal_put_char(&terminal, c);
+      char key = us_keyboard[scancode];
+      if (key) {
+        terminal_put_char(&terminal, key);
+      }
     }
   }
 }
